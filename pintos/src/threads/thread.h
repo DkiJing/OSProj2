@@ -7,6 +7,8 @@
 #include "fixed_point.h"
 #include "filesys/file.h"
 
+typedef int pid_t;
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -114,8 +116,8 @@ struct thread
      * -1: load failed
      *  1: load success */
     int child_load_status;
-    struct lock lock_child;
-    struct condition cond_child;
+    struct lock *lock_child;
+    struct condition *cond_child;
     /* list of children, which should be a list of struct child_status */
     struct list children;
 #endif

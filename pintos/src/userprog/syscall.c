@@ -10,14 +10,31 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 
+static uint32_t *esp;
 static void syscall_handler (struct intr_frame *);
-
 
 /* System call functions */
 static void halt(void);
 static void exit(int);
 static pid_t exec(const char *);
 static int wait(pid_t);
+
+static bool
+is_valid_uvaddr(const void *uvaddr)
+{
+  return (uvaddr != NULL && is_user_vaddr(uvaddr));
+}
+
+/* whether the pointer is valid or not */
+bool
+is_valid_ptr(const void *usr_ptr)
+{
+  struct thread *cur = thread_current();
+  if(is_valid_uvaddr(usr_ptr)){
+    return (pagedir_get_page(cur->pagedir, usr_ptr)) != NULL;
+  }
+  return false;
+}
 
 void
 syscall_init (void) 
@@ -67,7 +84,7 @@ exit (int status)
 {
    struct child_status *child;
    struct thread *cur = thread_current();
-   struct thread *parent = thread_get_by_id(cur-parent_id);
+   struct thread *parent = thread_get_by_id(cur->parent_id);
    if(parent != NULL){
      struct list_elem *e = list_tail(&parent->children);
      while((e = list_prev(e)) != list_head(&parent->children)){
@@ -110,3 +127,4 @@ wait(pid_t pid)
 {
   return process_wait(pid);
 }
+
