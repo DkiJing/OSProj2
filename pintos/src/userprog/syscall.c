@@ -9,6 +9,21 @@
 #include "threads/malloc.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+ 
+/* file_descriptor */
+struct file_descriptor
+{
+  /* unique file descriptor number returns to user process */
+  int fd_num;
+  /* owner thread's id of open file */
+  tid_t owner;
+  /* open file */
+  struct file *file_struct;
+  struct list_elem elem;
+};
+
+struct list open_files;
+struct lock *fs_lock;
 
 static uint32_t *esp;
 static void syscall_handler (struct intr_frame *);
@@ -18,6 +33,10 @@ static void halt(void);
 static void exit(int);
 static pid_t exec(const char *);
 static int wait(pid_t);
+static int write(int, const void *, unsigned);
+
+static struct file_descriptor *get_open_file(int);
+static bool is_valid_uvaddr(const void *);
 
 static bool
 is_valid_uvaddr(const void *uvaddr)
@@ -65,6 +84,9 @@ syscall_handler (struct intr_frame *f)
         break;
       case SYS_WAIT:
         f->eax = wait(*(esp + 1));
+        break;
+      case SYS_WRITE:
+        f->eax = write(*(esp + 1), (void *) *(esp + 2), *(esp + 3));
         break;
       default:
 	break;	
@@ -128,3 +150,52 @@ wait(pid_t pid)
   return process_wait(pid);
 }
 
+int
+write(int fd, const void *buffer, unsigned size)
+{
+  struct file_descriptor *fd_struct;
+  int status = 0;
+  unsigned buffer_size = size;
+  void *buffer_tmp = buffer;
+  /* check the user memory pointing by buffer are vaild */
+  while(buffer_tmp != NULL){
+    if(!is_valid_ptr(buffer_tmp))
+      exit(-1);
+    if(buffer_size > PGSIZE){
+      buffer_tmp += PGSIZE;
+      buffer_size -= PGSIZE;
+    }else if(buffer_size == 0){
+      buffer_tmp = NULL;
+    }else{
+      buffer_tmp = buffer + size - 1;
+      buffer_size = 0;
+    }
+  }
+  lock_acquire(&fs_lock);
+  if(fd == STDIN_FILENO)
+    status = -1;
+  else if(fd == STDOUT_FILENO){
+    putbuf(buffer, size);
+    status = size;
+  }else{
+    fd_struct = get_open_file(fd);
+    if(fd_struct != NULL)
+      status = file_write(fd_struct->file_struct, buffer, size);
+  }
+  lock_release(&fs_lock);
+  return status;
+}
+
+struct file_descriptor *
+get_open_file(int fd)
+{
+  struct list_elem *e;
+  struct file_descriptor *fd_struct;
+  e = list_tail(&open_files);
+  while((e = list_prev(e)) != list_head(&open_files)){
+    fd_struct = list_entry(e, struct file_descriptor, elem);
+    if(fd_struct->fd_num == fd)
+      return fd_struct;
+  }
+  return NULL;
+}

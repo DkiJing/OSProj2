@@ -130,6 +130,7 @@ process_wait (tid_t child_tid)
       status = -1;
     else{
       lock_acquire(&cur->lock_child);
+      // parent process will wait here until child exists
       while(thread_get_by_id(child_tid) != NULL){
         cond_wait(&cur->cond_child, &cur->lock_child);
       }
