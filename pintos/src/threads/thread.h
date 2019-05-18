@@ -4,11 +4,9 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <threads/synch.h>
 #include "fixed_point.h"
 #include "filesys/file.h"
-
-typedef int pid_t;
-
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -28,14 +26,28 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-struct child_status
-{
+struct child_status {
   tid_t child_id;
   bool is_exit_called;
   bool has_been_waited;
   int child_exit_status;
-  struct list_elem elem_child_status;
+  struct list_elem elem_child_status;  
 };
+
+
+/* A struct to keep track of a thread's children's information,
+ * inclduing exit status, if it is terminated by kernel, and
+ * if process_wait has been called successfully
+ */
+struct waiting_child
+  {
+    tid_t child_id;                          // thread_id
+    int child_exit_status;
+    bool is_terminated_by_kernel;
+    bool has_been_waited;
+    struct list_elem elem_waiting_child;     // itself
+  };
+
 
 /* A kernel thread or user process.
 
@@ -106,26 +118,32 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-#ifdef USERPROG
-    /* Owned by userprog/process.c. */
+// #ifdef USERPROG
+     tid_t parent_id;                    /* parent thread id */
+
     uint32_t *pagedir;                  /* Page directory. */
-    struct file *exec_file;             
-    tid_t parent_id;                    /* parent thread id */
-    /* Indicate child's executable-loading status
-     *  0: has not been loaded
-     * -1: load failed
-     *  1: load success */
+    /* signal to indicate the child's executable-loading status:
+     *  - 0: has not been loaded
+     *  - -1: load failed
+     *  - 1: load success*/
     int child_load_status;
-    struct lock *lock_child;
-    struct condition *cond_child;
+
+    /* monitor used to wait the child, owned by wait-syscall and waiting
+       for child to load executable */
+    struct lock lock_child;
+    struct condition cond_child;
+
     /* list of children, which should be a list of struct child_status */
     struct list children;
-#endif
+
+    /* file struct represents the execuatable of the current thread */ 
+    struct file *exec_file;
+// #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
-
+struct thread * thread_get_by_id (tid_t);
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
